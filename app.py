@@ -7,7 +7,7 @@ import datetime
 
 # --- PAGE CONFIG ---
 st.set_page_config(
-    page_title="Health Risk Monitor", 
+    page_title="Integrated Evac Monitor", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -48,20 +48,25 @@ def load_data():
                     except: pass
                 elif '>500' in str(raw_cap): real_cap = 600
 
-            # 3. Simulate Live Occupancy & Health Risk
-            # Health Pivot: Overcrowding = High Disease Risk
-            occ = np.random.randint(0, int(real_cap * 1.5)) # Allow severe overcrowding
+            # 3. Simulate Live Occupancy
+            occ = np.random.randint(0, int(real_cap * 1.5)) 
             
-            status = "Safe"
-            if occ > real_cap:
-                status = "High Health Risk (Overcrowded)"
-            elif occ >= (real_cap * 0.8):
-                status = "Warning (High Density)"
-            else:
-                status = "Optimal"
+            # --- DUAL STATUS LOGIC (THE MERGE) ---
+            # Status A: Logistics (Capacity)
+            cap_status = "Available"
+            if occ > real_cap: cap_status = "Overcrowded (>100%)"
+            elif occ >= (real_cap * 0.8): cap_status = "Near Full (80-99%)"
+            else: cap_status = "Available (<80%)"
+            
+            # Status B: Health (Risk Assessment)
+            # Overcrowding = High Transmission Risk
+            health_risk = "Low Risk"
+            if occ > real_cap: health_risk = "CRITICAL: High Infection Risk"
+            elif occ >= (real_cap * 0.8): health_risk = "WARNING: Elevated Density"
+            else: health_risk = "SAFE: Social Distancing Possible"
 
-            # 4. Estimated Date (Last Sensor Ping)
-            days_ago = np.random.randint(0, 3) # Frequent updates for Health monitoring
+            # 4. Estimated Date
+            days_ago = np.random.randint(0, 3) 
             date_upd = datetime.date.today() - datetime.timedelta(days=days_ago)
             
             geo_rows.append({
@@ -70,7 +75,8 @@ def load_data():
                 'Province': props.get('province') or "Unspecified",
                 'Capacity': real_cap,
                 'Current_Evacuees': occ,
-                'Health_Status': status,
+                'Capacity_Status': cap_status,   # For Logicstics View
+                'Health_Risk': health_risk,      # For Health View
                 'Last_Sensor_Ping': date_upd,
                 'lat': lat,
                 'lon': lon,
@@ -90,7 +96,6 @@ def load_data():
         if 'Number of Evacuation Center' in df_excel.columns:
             df_excel = df_excel.rename(columns={'Number of Evacuation Center': 'Official_Count'})
 
-        # Estimated Verification Date (Quarterly Health Audit)
         random_days = np.random.randint(0, 90, size=len(df_excel))
         df_excel['Last_Audit'] = [
             (datetime.date.today() - datetime.timedelta(days=int(d))) for d in random_days
@@ -105,14 +110,23 @@ def load_data():
 # Load Data
 df_geo, df_admin = load_data()
 
-# --- SIDEBAR: MULTIPLE FILTERS (RUBRIC REQUIREMENT) ---
-st.sidebar.header("🔍 Filter Dashboard")
+# --- SIDEBAR: VIEW SWITCHER (THE MERGE CONTROL) ---
+st.sidebar.header("🎛️ Dashboard Controls")
 
-# 1. Province Filter
+# 1. VIEW MODE
+view_mode = st.sidebar.radio(
+    "Select Monitor Mode:",
+    ["📦 Capacity & Logistics", "🏥 Health Risk Assessment"]
+)
+
+st.sidebar.markdown("---")
+st.sidebar.header("🔍 Filters")
+
+# 2. Province Filter
 provinces = ["All"] + sorted(df_geo["Province"].unique().tolist())
-selected_prov = st.sidebar.selectbox("1. Select Province:", provinces)
+selected_prov = st.sidebar.selectbox("Select Province:", provinces)
 
-# 2. Type Filter (Cascading - Updates based on Province)
+# 3. Type Filter
 if selected_prov != "All":
     filtered_types = sorted(df_geo[df_geo["Province"] == selected_prov]["Type"].unique())
     df_filtered = df_geo[df_geo["Province"] == selected_prov]
@@ -120,41 +134,68 @@ else:
     filtered_types = sorted(df_geo["Type"].unique())
     df_filtered = df_geo
 
-selected_type = st.sidebar.multiselect("2. Facility Type:", options=filtered_types, default=filtered_types)
+selected_type = st.sidebar.multiselect("Facility Type:", options=filtered_types, default=filtered_types)
 
-# Apply Type Filter
 if selected_type:
     df_selection = df_filtered[df_filtered["Type"].isin(selected_type)]
 else:
     df_selection = df_filtered
 
-# --- MAIN HEADER (HEALTH INFORMATICS CONTEXT) ---
-st.title("🏥 Health Risk & Evacuation Monitor")
-st.markdown(f"**Objective:** Monitor overcrowding and disease transmission risk in **{len(df_selection):,}** active facilities.")
-st.caption("Subject: Health Informatics (ITE3) | Final Requirement")
+# --- MAIN HEADER ---
+st.title("🇵🇭 Integrated Disaster & Health Monitor")
+if view_mode == "📦 Capacity & Logistics":
+    st.markdown(f"**Logistics View:** Monitoring space availability in **{len(df_selection):,}** facilities.")
+else:
+    st.markdown(f"**Health View:** Assessing disease transmission risk due to overcrowding in **{len(df_selection):,}** facilities.")
+
 st.markdown("---")
 
-# --- TOP METRICS ---
+# --- DYNAMIC CONFIGURATION BASED ON MODE ---
+if view_mode == "📦 Capacity & Logistics":
+    # CONFIG FOR CAPACITY
+    map_color_col = "Capacity_Status"
+    map_colors = {
+        "Overcrowded (>100%)": "#FF0000",   # Red
+        "Near Full (80-99%)": "#FFA500",    # Orange
+        "Available (<80%)": "#008000"       # Green
+    }
+    chart_metric = "Capacity_Status"
+    
+else:
+    # CONFIG FOR HEALTH RISK
+    map_color_col = "Health_Risk"
+    map_colors = {
+        "CRITICAL: High Infection Risk": "#800080", # Purple (Biohazard feel)
+        "WARNING: Elevated Density": "#FF4500",     # Orange-Red
+        "SAFE: Social Distancing Possible": "#00BFFF" # Blue (Safe/Clean)
+    }
+    chart_metric = "Health_Risk"
+
+# --- ROW 1: METRICS ---
 total_cap = df_selection["Capacity"].sum()
 total_evac = df_selection["Current_Evacuees"].sum()
 occupancy_rate = (total_evac / total_cap * 100) if total_cap > 0 else 0
 
-# Health-based coloring for metrics
-risk_color = "normal"
-if occupancy_rate > 100: risk_color = "inverse" # Red if overcrowded
-
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Active Facilities", f"{len(df_selection):,}")
+c1.metric("Active Sites", f"{len(df_selection):,}")
 c2.metric("Total Capacity", f"{total_cap:,}")
-c3.metric("Current Evacuees (Sim)", f"{total_evac:,}")
-c4.metric("Avg Occupancy Rate", f"{occupancy_rate:.1f}%", delta="Transmission Risk", delta_color=risk_color)
+c3.metric("Current Evacuees", f"{total_evac:,}")
+
+# Metric Color Logic
+if view_mode == "📦 Capacity & Logistics":
+    delta_msg = "Utilization Rate"
+    delta_col = "inverse" if occupancy_rate > 100 else "normal"
+else:
+    delta_msg = "Crowding Factor"
+    delta_col = "inverse" if occupancy_rate > 80 else "normal" # Stricter for health
+
+c4.metric("Avg Occupancy", f"{occupancy_rate:.1f}%", delta=delta_msg, delta_color=delta_col)
 
 st.markdown("---")
 
-# --- ROW 1: INTERACTIVE MAP (UI/UX REQUIREMENT) ---
-st.subheader("📍 Real-time Disease Risk Map")
+# --- ROW 2: DYNAMIC MAP ---
+st.subheader(f"📍 {view_mode} Map")
 
-# Dynamic Center Point
 if not df_selection.empty:
     center_lat = df_selection["lat"].mean()
     center_lon = df_selection["lon"].mean()
@@ -166,15 +207,11 @@ fig_map = px.scatter_mapbox(
     df_selection,
     lat="lat",
     lon="lon",
-    color="Health_Status",
-    size="Capacity", # Larger dots = Larger centers
+    color=map_color_col, # Dynamic Column
+    size="Capacity",
     hover_name="Center_Name",
     hover_data={"Province": True, "Type": True, "Current_Evacuees": True, "lat": False, "lon": False},
-    color_discrete_map={
-        "High Health Risk (Overcrowded)": "#FF0000", # Red
-        "Warning (High Density)": "#FFA500",         # Orange
-        "Optimal": "#008000"                         # Green
-    },
+    color_discrete_map=map_colors, # Dynamic Colors
     zoom=zoom_level,
     center={"lat": center_lat, "lon": center_lon},
     mapbox_style="open-street-map",
@@ -182,36 +219,33 @@ fig_map = px.scatter_mapbox(
 )
 st.plotly_chart(fig_map, use_container_width=True)
 
-# --- ROW 2: CHARTS ---
+# --- ROW 3: CHARTS ---
 c5, c6 = st.columns(2)
 
 with c5:
-    st.subheader("📊 Overcrowding by Facility Type")
-    # Sort to show highest risk first
-    type_risk = df_selection.groupby("Type")[["Capacity", "Current_Evacuees"]].sum().reset_index()
-    fig_bar = px.bar(type_risk, x="Type", y=["Capacity", "Current_Evacuees"], 
-                     barmode="overlay", title="Capacity vs. Actual Load")
+    st.subheader("📊 Occupancy Levels by Type")
+    type_data = df_selection.groupby("Type")[["Capacity", "Current_Evacuees"]].sum().reset_index()
+    fig_bar = px.bar(type_data, x="Type", y=["Capacity", "Current_Evacuees"], 
+                     barmode="overlay", title="Space vs. Demand")
     st.plotly_chart(fig_bar, use_container_width=True)
 
 with c6:
-    st.subheader("⚠️ Health Risk Distribution")
-    fig_pie = px.pie(df_selection, names="Health_Status", hole=0.4, 
-                     color="Health_Status",
-                     color_discrete_map={
-                        "High Health Risk (Overcrowded)": "#FF0000",
-                        "Warning (High Density)": "#FFA500",
-                        "Optimal": "#008000"
-                     })
+    st.subheader(f"⚠️ {chart_metric} Distribution")
+    fig_pie = px.pie(df_selection, names=chart_metric, hole=0.4, 
+                     color=chart_metric,
+                     color_discrete_map=map_colors)
     st.plotly_chart(fig_pie, use_container_width=True)
 
-# --- ROW 3: INTEGRATED DATA ---
-st.subheader("💾 Data Registry & Audit")
+# --- ROW 4: DATA TABS ---
+st.subheader("💾 Master Records")
 tab1, tab2 = st.tabs(["🌍 Live Sensor Data (GeoJSON)", "📑 LGU Registry (Excel)"])
 
 with tab1:
     st.markdown("**Source:** `ph_evacs_cleaned.geojson` | **Update Frequency:** Real-time (Simulated)")
-    cols = ['Center_Name', 'Province', 'Type', 'Health_Status', 'Current_Evacuees', 'Capacity', 'Last_Sensor_Ping']
-    st.dataframe(df_selection[cols], use_container_width=True)
+    # Show different columns based on mode
+    common_cols = ['Center_Name', 'Province', 'Type', 'Current_Evacuees', 'Capacity']
+    mode_col = [map_color_col] # Shows either Capacity_Status or Health_Risk
+    st.dataframe(df_selection[common_cols + mode_col + ['Last_Sensor_Ping']], use_container_width=True)
 
 with tab2:
     st.markdown("**Source:** `evaccenter.xlsx` | **Update Frequency:** Quarterly Audit")
