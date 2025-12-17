@@ -142,7 +142,7 @@ else:
     df_selection = df_filtered
 
 # --- MAIN HEADER ---
-st.title("🇵🇭 Integrated Disaster & Health Monitor")
+st.title("🇵🇭 Integrated Evacuation Center & Health Monitor")
 if view_mode == "📦 Capacity & Logistics":
     st.markdown(f"**Logistics View:** Monitoring space availability in **{len(df_selection):,}** facilities.")
 else:
