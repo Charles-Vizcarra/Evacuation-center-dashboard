@@ -12,10 +12,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- JUSTIFICATION FOR DATA INTEGRITY (RUBRIC REQUIREMENT) ---
-# justifying the use of simulation for the professor
-st.info("ℹ️ **System Status:** Real-time sensor API is currently offline. Dashboard running in **Prototyping Mode** with simulated occupancy data.")
-
 # --- DATA LOADING FUNCTION ---
 @st.cache_data
 def load_data():
